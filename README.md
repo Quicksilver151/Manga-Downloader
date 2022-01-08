@@ -8,6 +8,7 @@ Download history is automatically saved. Enter "U" when the program starts to ch
 # Dependencies
 * BeautifulSoup
 * requests
+* cloudscraper
 
 # Usage
 In the CMD run python mangahub.py
