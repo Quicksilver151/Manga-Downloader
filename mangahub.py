@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+import time
 import requests
 import urllib
 import json
@@ -5,6 +7,8 @@ import os
 import zipfile
 from pathlib import Path
 from bs4 import BeautifulSoup
+from os.path import basename
+import cloudscraper
 
 url = 'https://mangahub.io/search?q='
 history_file_name = "DownloadHistory.json"
@@ -65,8 +69,11 @@ class MangaDownloader:
     def display_chapters(self, manga_name, chapter_list_url):
         """Display all chapters"""
         print(manga_name + " Chapters : ")
-        chapters = get_soup(chapter_list_url).find_all(class_="_287KE list-group-item")
-        limit = 10
+        soup = BeautifulSoup(scraper.get(chapter_list_url).text, 'html.parser')
+        chapters = soup.find_all(class_="_287KE list-group-item")  # overall list of chapters
+        scraper.get(chapter_list_url).text
+        #chapters = get_soup(chapter_list_url).find_all(class_="_287KE list-group-item")
+        limit = 20
         for num, chapter in enumerate(chapters, 1):
             chapter_num = chapter.find(class_="text-secondary _3D1SJ").text
             print("{:<5} Chapter: {:50}".format(num, chapter_num))
@@ -74,7 +81,7 @@ class MangaDownloader:
                 print("Enter a space to see all results")
                 user_response = MangaDownloader.chapter_input()
                 if user_response == " ":  # show the rest of the results if the user presses space
-                    limit += 1000
+                    limit += 2000
                 else:
                     break
 
@@ -94,8 +101,9 @@ class MangaDownloader:
         chapters_downloaded = []
         try:
             if "all" in index:
-                first_index = 0
-                second_index = len(chapters)
+                first_index = len(chapters)-1
+                second_index = 0
+                # HEREEEEEEEEEEEEEEEEEEEEEEEEE <------------------------------------------------
             elif "-" in index:
                 temp = index.split("-")
                 first_index = int(temp[0]) - 1
@@ -103,7 +111,14 @@ class MangaDownloader:
             else:
                 first_index = int(index) - 1
                 second_index = first_index + 1
-            for i in range(first_index, second_index):
+            
+            inverse = 1
+            
+            if first_index+1 > second_index:
+                second_index -= 2
+                inverse = -1
+            
+            for i in range(first_index, second_index, inverse):
                 try:
                     chapter_name = valid_name(chapters[i].find('span').text)
                     chapters_downloaded.append(chapter_name)
@@ -131,10 +146,11 @@ class MangaDownloader:
             filetype = "png"
         else:
             filetype = "jpeg"
-        response = requests.get(download_url + filetype)
+        # TODO
+        response = scraper.get(download_url + filetype)
         if response.status_code == 404 and filetype == "jpeg":
             filetype = 'jpg'
-            response = requests.get(download_url + filetype)
+            response = scraper.get(download_url + filetype)
         return response
 
 
@@ -176,7 +192,13 @@ class Update:
 
     def find_new_chapters(self, chapter_url, latest_chapter):
         """Iterates though all chapters and return a list of new chapters"""
-        chapters = get_soup(chapter_url).find_all(class_="_287KE list-group-item")  # overall list of chapters
+        print(chapter_url)
+        #cloudfare bypass
+        #parse html
+        # TODO
+        soup = BeautifulSoup(scraper.get(chapter_url).text, 'html.parser')
+        chapters = soup.find_all(class_="_287KE list-group-item")  # overall list of chapters
+        scraper.get(chapter_url).text
         new_chapters = []
         for chapter in chapters:
             chapter_num = chapter.find(class_="text-secondary _3D1SJ").text
@@ -199,13 +221,24 @@ class Update:
 def download_chapter(manga_name, chapter_name, chapter_url):
     """Download each image from the chapter website"""
     print("Downloading : "+chapter_name)
-    soup = get_soup(chapter_url).find_all(class_="PB0mN")[0]['src'].rsplit('/1.', 1)
+    
+    soup = BeautifulSoup(scraper.get(chapter_url).text, 'html.parser')
+    
+    chapters = soup.find_all(class_="_287KE list-group-item")  # overall list of chapters
+    time.sleep(1)
+    scraper.get(chapter_url).text
+    
+    soup = soup.find_all(class_="PB0mN")[0]['src'].rsplit('/1.', 1)
+    
+    
     base_image_url, filetype = soup[0] + "/", soup[-1]
+    print(base_image_url)
     folder = create_path(manga_name)
     image_names, num = [], 1
     while True:
         download_url = base_image_url + str(num) + '.'
-        response = MangaDownloader.is_this_broken(requests.get(download_url + filetype), download_url, filetype)
+        # TODO gonna have to make sure to re-get data if one check wasnt enough. gotta do this for all requests
+        response = MangaDownloader.is_this_broken(scraper.get(download_url + filetype), download_url, filetype)
         if response.status_code != 200:
             break
         name = manga_name + " " + chapter_name + " " + str(num) + '.' + filetype
@@ -214,6 +247,12 @@ def download_chapter(manga_name, chapter_name, chapter_url):
         with file.open('wb') as wf:
             wf.write(response.content)
         num += 1
+    
+    # HACK
+    time.sleep(2)
+    scraper.get(chapter_url)
+    time.sleep(1)
+    
     generate_cbz(folder, image_names, chapter_name, manga_name)
 
 
@@ -223,7 +262,7 @@ def generate_cbz(folder, image_names, chapter_name, manga_name):
     if image_names:
         z = zipfile.ZipFile(file, 'w')
         for image in image_names:
-            z.write(image)
+            z.write(image,basename(image))
     else:
         print("Error! No images found, CBZ not made")
     for name in image_names:
@@ -250,7 +289,10 @@ def valid_name(name):
 
 def get_soup(search_url):
     """Gets the html and puts it in a parser"""
-    response = requests.get(search_url)
+    #HACK TODO for some reason i need to run scraper multiple times
+    response = scraper.get(search_url)
+    scraper.get(search_url)
+    scraper.get(search_url)
     return BeautifulSoup(response.content, 'html.parser')
 
 
@@ -274,5 +316,6 @@ def save_history(chapter, manga_name, chapter_list_url):
 
 if __name__ == '__main__':
     print("Searching for manga on mangahub.io")
+    scraper = cloudscraper.CloudScraper()
     start()
 
